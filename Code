@@ -1,0 +1,33 @@
+def best_iv(summary):
+    
+    """
+    Kết quả trả về: 
+    - temp: cách group biến
+    - IV: IV mạnh nhất trong các cách group biến
+    """
+    from itertools import product
+    num = summary.shape[0]
+    matrix=pd.DataFrame(list(product([0,1],repeat = (num-1)))).rename(columns=lambda x: x+1) 
+    matrix=pd.concat([pd.DataFrame(np.ones(matrix.shape[0])), matrix], axis=1).cumsum(axis=1)
+
+    temp = pd.DataFrame({'Group final':matrix.values.flatten()}).rename_axis('Obs').reset_index()
+    temp['Case'] = temp.Obs//num
+    temp['Group'] = np.mod(temp.Obs,num)
+
+    temp = temp.drop(['Obs'], axis=1)
+    temp = pd.merge(temp, summary.loc[:,['Total', 'Bad', 'Group']], on='Group', how='left')
+    grp_sum = pd.DataFrame(temp.groupby(['Case', 'Group final'])['Total', 'Bad'].sum()).reset_index(\
+                       level='Group final').reset_index(level='Case')
+    
+    #Calculated IV by case
+    grp_sum['Woe'] = np.log(((grp_sum['Total']-grp_sum['Bad'])/summary.Good.sum())/(grp_sum['Bad']/summary.Bad.sum()))
+    grp_sum['Woe'] = np.where(np.isinf(grp_sum['Woe']), 
+                              np.log((((grp_sum['Total']-grp_sum['Bad'])+0.5)/summary.Good.sum())/((grp_sum['Bad']+0.5)/summary.Bad.sum())),
+                              grp_sum['Woe'])
+    grp_sum['IV'] = grp_sum['Woe']*(((grp_sum['Total']-grp_sum['Bad'])/summary.Good.sum())-(grp_sum['Bad']/summary.Bad.sum()))
+
+    #IV-Max
+    IV = pd.DataFrame({'IV Max':grp_sum.groupby(by=['Case'])['IV'].sum().groupby(level=[0]).cumsum()}).reset_index()
+    n_grp = pd.DataFrame({'Num of group':temp.groupby(['Case'])['Group final'].max()}).reset_index()
+    IV = pd.merge(IV, n_grp, on='Case', how='left')
+    return(temp, IV)
